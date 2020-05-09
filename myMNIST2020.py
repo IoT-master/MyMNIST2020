@@ -177,12 +177,12 @@ class RandomCrop(object):
         return {'image': image, 'label': label}
 
 
-# def get_sample(index):
-#     return my_dataset.__getitem__(index)
+def get_sample(index):
+    return my_dataset.__getitem__(index)
 
 
 # print(get_sample(7))
-# print(get_sample(7)['image'].shape)
+print(get_sample(7)['image'].shape)
 
 batch_loader_params = {
     "batch_size": 6,
@@ -201,8 +201,8 @@ samples = batch_samples.next()
 # imshow(torchvision.utils.make_grid(samples['image']))
 
 # Conv2d params
-# in_channels, => channels of your pixels
-# out_channels, => batch size
+# in_channels, => channels of your pixels, 3rd element in the size
+# out_channels, => How many layers you want for feature extraction
 # kernel_size, => L, H of pixel size
 # stride = 1,
 # padding = 0,
@@ -219,6 +219,8 @@ samples = batch_samples.next()
 # return_indices = False,
 # ceil_mode = False
 
+# Pooling cut size by 2
+
 
 def spatial_size(input_size: int, kernel_size: int, stride: int = 1, padding: int = 0):
     # https://cs231n.github.io/convolutional-networks/
@@ -230,56 +232,63 @@ def spatial_size(input_size: int, kernel_size: int, stride: int = 1, padding: in
 
 print(spatial_size(28, 5))
 print(spatial_size(24, 5))
-print(spatial_size(5, 5))
+print(spatial_size(12, 5))
+# Start with an image that is 28x28*4. The first convolution layer as a 5x5 kernel size with no padding
+# Output image is smaller. The Output image has a width and height that is smaller by 4 pixel
+# 7x7 image is reduced to a 3 x 3 image
+# Applying a 5x5 kernel will remove 2 pixel layers from the top, left, right and bottom
+# Input 28 x 28 becomes 24x24 in conv1
+# it is fed to a 2x2 pooling layer, which cuts the image size by half, so you end up with 12x12
+# next covolution layer reduces it to 8x8 with a 5x5 kernel
+# next pooling layer reduces it to a 4x4 (with 50 output channels)... * 4 color channels
 
 
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.conv1 = nn.Conv2d(4, 6, 28)
-        self.pool = nn.MaxPool2d(24)
-        self.conv2 = nn.Conv2d(6, 24, 24)
-        self.fc1 = nn.Linear(20 * 5 * 5, 120)
-        self.fc2 = nn.Linear(120, 84)
-        self.fc3 = nn.Linear(84, 10)
+        self.conv1 = nn.Conv2d(4, 20, 5, 1)  # 28x28x4 with batch of 6, 18816
+        self.conv2 = nn.Conv2d(20, 50, 5, 1)
+        self.fc1 = nn.Linear(4*4*50, 60)
+        self.fc2 = nn.Linear(60, 10)
 
     def forward(self, x):
-        x = self.pool(F.relu(self.conv1(x)))
-        x = self.pool(F.relu(self.conv2(x)))
-        x = x.view(-1, 16 * 5 * 5)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
+        x = F.relu(self.conv1(x))  # 24x24x20 with at batch of 6
+        x = F.max_pool2d(x, 2, 2)  # 12x12x20 w/ batch of 6
+        x = F.relu(self.conv2(x))  # 8x8x56 w/ batch of 6
+        x = F.max_pool2d(x, 2, 2)  # 4x4x50 w/ batch of 6
+        x = x.view(-1, 4*4*50)     # 800 w/ batch of 6
+        x = F.relu(self.fc1(x))    # 60 w/ batch of 6
+        x = self.fc2(x)            # 10 w/ batch of 6
+        # # There's no activation at the final layer because of the criterion of CEL
         return x
 
 
 net = Net()
 
 
-# criterion = nn.CrossEntropyLoss()
-# optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
 
-# for epoch in range(2):  # loop over the dataset multiple times
+for epoch in range(2):  # loop over the dataset multiple times
 
-#     running_loss = 0.0
-#     for i, data in enumerate(dataloader, 0):
-#         # get the inputs; data is a list of [inputs, labels]
-#         inputs, labels = data
+    running_loss = 0.0
+    for i, data in enumerate(dataloader, 0):
+        # get the inputs; data is a list of [inputs, labels]
+        inputs, labels = data
 
-#         # zero the parameter gradients
-#         optimizer.zero_grad()
-#         print(data['image'].shape)
-#         # forward + backward + optimize
-#         outputs = net(data['image'])
-#         loss = criterion(outputs, labels)
-#         loss.backward()
-#         optimizer.step()
+        # zero the parameter gradients
+        optimizer.zero_grad()
+        # forward + backward + optimize
+        outputs = net(data['image'])
+        loss = criterion(outputs, data['label'].squeeze())
+        loss.backward()
+        optimizer.step()
 
-#         # print statistics
-#         running_loss += loss.item()
-#         if i % 2000 == 1999:    # print every 2000 mini-batches
-#             print('[%d, %5d] loss: %.3f' %
-#                   (epoch + 1, i + 1, running_loss / 2000))
-#             running_loss = 0.0
+        # print statistics
+        running_loss += loss.item()
+        # if i % 2000 == 1999:    # print every 2000 mini-batches
+        print('[%d, %5d] loss: %.3f' %
+              (epoch + 1, i + 1, running_loss / 2000))
+        running_loss = 0.0
 
-# print('Finished Training')
+print('Finished Training')
