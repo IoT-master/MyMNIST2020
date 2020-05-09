@@ -89,13 +89,97 @@ class ToTensor(object):
                 'label': torch.from_numpy(label)}
 
 
+class Rescale(object):
+    """Rescale the image in a sample to a given size.
+
+    Args:
+        output_size (tuple or int): Desired output size. If tuple, output is
+            matched to output_size. If int, smaller of image edges is matched
+            to output_size keeping aspect ratio the same.
+    """
+
+    def __init__(self, output_size):
+        assert isinstance(output_size, (int, tuple))
+        self.output_size = output_size
+
+    def __call__(self, sample):
+        image, label = sample['image'], sample['label']
+
+        h, w = image.shape[:2]
+        if isinstance(self.output_size, int):
+            if h > w:
+                new_h, new_w = self.output_size * h / w, self.output_size
+            else:
+                new_h, new_w = self.output_size, self.output_size * w / h
+        else:
+            new_h, new_w = self.output_size
+
+        new_h, new_w = int(new_h), int(new_w)
+
+        img = transforms.resize(image, (new_h, new_w))
+
+        # h and w are swapped for landmarks because for images,
+        # x and y axes are axis 1 and 0 respectively
+        landmarks = landmarks * [new_w / w, new_h / h]
+
+        return {'image': img, 'label': label}
+
+
 transformed_dataset = MNISTDataset(
     'data/MNISTDataSet/test.csv', 'data/MNISTDataSet/test', transforms.Compose([
         ToTensor()
     ]))
 
 
-print(my_dataset.__getitem__(3)['label'])
+class RandomCrop(object):
+    """Crop randomly the image in a sample.
 
-dataloader = DataLoader(transformed_dataset, batch_size=4,
-                        shuffle=True, num_workers=4)
+    Args:
+        output_size (tuple or int): Desired output size. If int, square crop
+            is made.
+    """
+
+    def __init__(self, output_size):
+        assert isinstance(output_size, (int, tuple))
+        if isinstance(output_size, int):
+            self.output_size = (output_size, output_size)
+        else:
+            assert len(output_size) == 2
+            self.output_size = output_size
+
+    def __call__(self, sample):
+        image, label = sample['image'], sample['label']
+
+        h, w = image.shape[:2]
+        new_h, new_w = self.output_size
+
+        top = np.random.randint(0, h - new_h)
+        left = np.random.randint(0, w - new_w)
+
+        image = image[top: top + new_h,
+                      left: left + new_w]
+
+        return {'image': image, 'label': label}
+
+
+def get_sample(index):
+    return my_dataset.__getitem__(index)
+
+
+print(get_sample(7))
+
+batch_loader_params = {
+    "batch_size": 4,
+    "shuffle": True,
+    "num_workers": 4
+}
+dataloader = DataLoader(transformed_dataset, **batch_loader_params)
+
+
+def get_batch_sample():
+    return iter(dataloader)
+
+
+print(get_batch_sample().next())
+
+epochs = 1
