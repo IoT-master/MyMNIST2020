@@ -1,5 +1,9 @@
+import torch.optim as optim
+import torch.nn.functional as F
+import torch.nn as nn
 import os
 from torch.utils.data import Dataset, DataLoader
+import torchvision
 from torchvision import transforms
 from os import walk
 import torch
@@ -9,7 +13,18 @@ import pandas as pd
 from PIL import Image
 from matplotlib import image
 
+torch.set_printoptions(linewidth=120)
+print(torch.__version__)
+print(torchvision.__version__)
+
 data = image.imread('data/MNISTDataSet/train/0.png')
+
+
+def imshow(img):
+    img = img / 2 + 0.5     # unnormalize
+    npimg = img.numpy()
+    plt.imshow(np.transpose(npimg, (1, 2, 0)))
+    plt.show()
 
 
 def normalize(np_array):
@@ -162,24 +177,100 @@ class RandomCrop(object):
         return {'image': image, 'label': label}
 
 
-def get_sample(index):
-    return my_dataset.__getitem__(index)
+# def get_sample(index):
+#     return my_dataset.__getitem__(index)
 
 
-print(get_sample(7))
+# print(get_sample(7))
+# print(get_sample(7)['image'].shape)
 
 batch_loader_params = {
-    "batch_size": 4,
+    "batch_size": 6,
     "shuffle": True,
     "num_workers": 4
 }
 dataloader = DataLoader(transformed_dataset, **batch_loader_params)
 
+batch_samples = iter(dataloader)
 
-def get_batch_sample():
-    return iter(dataloader)
+samples = batch_samples.next()
+# # print labels
+# print(' '.join('%5s' % samples['label'][j] for j in range(4)))
+
+# # show images
+# imshow(torchvision.utils.make_grid(samples['image']))
+
+# Conv2d params
+# in_channels, => channels of your pixels
+# out_channels, => batch size
+# kernel_size, => L, H of pixel size
+# stride = 1,
+# padding = 0,
+# dilation = 1,
+# groups = 1,
+# bias = True,
+# padding_mode = builtins.str
 
 
-print(get_batch_sample().next())
+def spatial_size(input_size: int, kernel_size: int, stride: int = 1, padding: int = 0):
+    # https://cs231n.github.io/convolutional-networks/
+    spatial_size = (input_size - kernel_size + 2 * padding)/stride + 1
+    assert spatial_size % 1 == 0
+    assert spatial_size > 0
+    return int(spatial_size)
 
-epochs = 1
+
+print(spatial_size(28, 5))
+print(spatial_size(24, 5))
+
+
+class Net(nn.Module):
+    def __init__(self):
+        super(Net, self).__init__()
+        self.conv1 = nn.Conv2d(4, 6, 28)
+        self.pool = nn.MaxPool2d(2, 2)
+        self.conv2 = nn.Conv2d(24, 20, 5)
+        self.fc1 = nn.Linear(20 * 5 * 5, 120)
+        self.fc2 = nn.Linear(120, 84)
+        self.fc3 = nn.Linear(84, 10)
+
+    def forward(self, x):
+        x = self.pool(F.relu(self.conv1(x)))
+        x = self.pool(F.relu(self.conv2(x)))
+        x = x.view(-1, 16 * 5 * 5)
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+        return x
+
+
+net = Net()
+
+
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+
+for epoch in range(2):  # loop over the dataset multiple times
+
+    running_loss = 0.0
+    for i, data in enumerate(dataloader, 0):
+        # get the inputs; data is a list of [inputs, labels]
+        inputs, labels = data
+
+        # zero the parameter gradients
+        optimizer.zero_grad()
+        print(data['image'].shape)
+        # forward + backward + optimize
+        outputs = net(data['image'])
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        # print statistics
+        running_loss += loss.item()
+        if i % 2000 == 1999:    # print every 2000 mini-batches
+            print('[%d, %5d] loss: %.3f' %
+                  (epoch + 1, i + 1, running_loss / 2000))
+            running_loss = 0.0
+
+print('Finished Training')
