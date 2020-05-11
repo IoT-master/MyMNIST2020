@@ -16,7 +16,10 @@ from matplotlib import image
 torch.set_printoptions(linewidth=120)
 print(torch.__version__)
 print(torchvision.__version__)
-
+# Set ipython's max row display
+pd.set_option('display.max_row', 1000)
+# Set iPython's max column width to 50
+pd.set_option('display.max_columns', 50)
 data = image.imread('data/MNISTDataSet/train/0.png')
 
 
